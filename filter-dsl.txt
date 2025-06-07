@@ -1,0 +1,34 @@
+Filter: fieldname[condition];fieldname[condition];Cross Filter: <CrossFilter FilteredEntityName-CrossedEnitityName>CrossedEntityFieldname[condition];
+
+1. Filter 是一个固定名字的标签说明这个是Filter，因为还会有另一个标签叫 CrossFilter, 用于在Filter的entity上 和别的关联entity 做filter.
+2. condition 包括 id, 字符串(无需使用引号包围), 和日期类型。逻辑操作符有 AND, OR, NOT, >=, <=, = , >, <, !=，可以使用括号()进行优先级处理。有特殊关键词 today和 current_user.
+
+
+Filter:
+1. 字段不区分大小写，不需要点号表示嵌套对象的属性，因为不支持嵌套。字段名本身允许常规的命名字符，可以带空格。
+2. 条件内部的字符串字面量，如果只是单个的时候，可以不带双引号，如果是长字符串，或者结合了其他逻辑操作符，则需要带引号。summary["This is a test"]
+3. 日期格式需要支持多种，但都与当前系统的日期格式一致。如果是使用特殊字段比如today, tomorrow, yesterday 则只能单个使用，不能够与其他操作符结合。
+4. id 都是数字
+5. 所有操作符都是位于每个field的condition内，也就是说 status[NOT "Open"].
+6. fieldname[condition1 AND condition2] 不等价于 fieldname[condition1];fieldname[condition2] ？ 每一个fieldname只会有一个condition。
+
+例子： Filter: title[”Release Plan“ AND (”Version 1“ OR ”Version 2“)];dueDate[>today];assignee[!=current_user];CrossFilter: <Test-Run>Run ID[1]
+
+CrossFilter:
+1. 实体名称 其实是固定的应用内的entity类型名，那么实际上就是仅包括字母的名称，不区分大小写。比如 基于Test 关联run的crossfilter 那么就写成<CrossFilter Test-Run>
+2. 关联关系通过预定义的schema确定
+3. 可以有多个CrossFilter段，但是每个crossfilter都是唯一的，即同一种关联关系只能有一种crossfilter
+4. 内部语法和filter 的 condition完全一致。
+
+一般性问题：
+
+1. 不支持换行符，所以可以忽略。condition内字符串的空格要匹配，是进检查的。
+2. 有错误需要给出错误定位。
+3. 拆分逻辑后续再研究，目前先完成解释器。我认为解释器应该是不依赖于我的拆分逻辑的。
+
+
+1. 关于日期特殊字段，可以使用>yesterday 这种。我的意思是日期不支持计算，比如today-7days 这种。
+2. 所以逻辑操作符都可以于括号结合使用 为一个复杂表达式。status[NOT ("Open" OR "Pending")]是合法的。
+3. 支持IS NULL和 IS NOT NULL这两个特殊的检查。
+4. 没有布尔类型的字段，所有类似布尔类型的字段实则上为字符串字段， 通过“Y”和“N”确定 然后由应用内的其他逻辑进行处理。
+5. 有IN 和 NOT IN（实则上是IN + NOT操作符）。其余你提到的没有。
