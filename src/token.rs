@@ -1,16 +1,16 @@
-//! The token definition for the filter language.
+//! Filter语言的 token 定义
 
-/// A token is a single unit of the language, with a specific kind and location.
+/// token 是语言的单个单元，具有特定的类型和位置
 #[derive(Debug, Clone, PartialEq)]
 pub struct Token<'a> {
     pub kind: TokenKind<'a>,
     pub span: Span,
 }
 
-/// The kind of a token.
+/// token 的类型
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind<'a> {
-    // Keywords
+    // 关键字
     Filter,      // "Filter:"
     CrossFilter, // "CrossFilter:"
     And,         // "AND"
@@ -20,18 +20,18 @@ pub enum TokenKind<'a> {
     Is,          // "IS"
     Null,        // "NULL"
 
-    // Literals
+    // 字面量
     Identifier(&'a str),
-    String(&'a str), // The raw string, including quotes
+    String(&'a str), // 原始字符串，包括引号
     Number(i64),
 
-    // Special Value Keywords
+    // 特殊值关键字
     Today,
     Yesterday,
     Tomorrow,
     CurrentUser,
 
-    // Punctuation
+    // 标点符号
     LParen,    // (
     RParen,    // )
     LBracket,  // [
@@ -39,7 +39,7 @@ pub enum TokenKind<'a> {
     Semicolon, // ;
     Dash,      // -
 
-    // Operators
+    // 运算符
     Eq,    // =
     NotEq, // !=
     Gt,    // >
@@ -47,17 +47,17 @@ pub enum TokenKind<'a> {
     Gte,   // >=
     Lte,   // <=
 
-    // Special
-    Illegal, // An illegal/unknown character
-    Eof,     // End of file
+    // 特殊
+    Illegal, // 非法/未知字符
+    Eof,     // 文件结束
 }
 
-/// Represents a span in the source text.
+/// 表示源文本中的位置范围
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Span {
-    /// The starting byte offset.
+    /// 起始字节偏移量
     pub start: usize,
-    /// The ending byte offset.
+    /// 结束字节偏移量
     pub end: usize,
 }
 

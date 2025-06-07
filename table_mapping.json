@@ -1,0 +1,10 @@
+{
+  "Test": "tests",
+  "Run": "test_runs", 
+  "Project": "projects",
+  "Task": "tasks",
+  "User": "users",
+  "Issue": "issues",
+  "Milestone": "milestones",
+  "Repository": "repositories"
+} 

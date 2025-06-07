@@ -1,4 +1,88 @@
-//! The parser for the filter language.
+//! Filter的语法分析器
+//!
+//! ## 解析流程图
+//!
+//! ```text
+//! parse()
+//!   ├─ 检查token类型
+//!   │   ├─ "Filter:" → parse_field_filters_until_semicolon_or_crossfilter()
+//!   │   │                └─ parse_field_filter()
+//!   │   │                     ├─ 解析字段名 (Identifier)
+//!   │   │                     ├─ 期望 '['
+//!   │   │                     ├─ parse_condition()
+//!   │   │                     └─ 期望 ']'
+//!   │   │
+//!   │   └─ "CrossFilter:" → parse_cross_filter()
+//!   │                        ├─ 期望 '<'
+//!   │                        ├─ 解析实体名 Source-Target
+//!   │                        ├─ 期望 '>'
+//!   │                        └─ parse_field_filters_until_semicolon_or_crossfilter()
+//!   │
+//!   └─ parse_condition() (递归下降解析)
+//!        └─ parse_or_expression()
+//!             ├─ parse_and_expression()
+//!             │    ├─ parse_not_expression()
+//!             │    │    └─ parse_primary_expression()
+//!             │    │         ├─ "(" → 分组表达式 (递归调用parse_condition)
+//!             │    │         ├─ "IS" → IS NULL / IS NOT NULL
+//!             │    │         ├─ "IN" → IN (值列表)
+//!             │    │         ├─ 比较运算符 → 比较操作 + 字面值
+//!             │    │         └─ 其他 → 默认相等比较 + 字面值
+//!             │    │
+//!             │    └─ 遇到AND时，继续解析右侧NOT表达式
+//!             │
+//!             └─ 遇到OR时，继续解析右侧AND表达式
+//! ```
+//!
+//! ## 语法优先级（从高到低）
+//!
+//! 1. **括号分组** `(expression)`
+//! 2. **NOT操作** `NOT expression`
+//! 3. **比较操作** `field[>value]`, `field[=value]`, `IS NULL`, `IN (...)`
+//! 4. **AND操作** `expr1 AND expr2`
+//! 5. **OR操作** `expr1 OR expr2`
+//!
+//! ## 支持的语法结构
+//!
+//! ### 基础过滤器
+//! ```text
+//! Filter: field_name[condition]
+//! ```
+//!
+//! ### 交叉过滤器
+//! ```text
+//! CrossFilter: <Source-Target> field_name[condition]
+//! ```
+//!
+//! ### 条件表达式
+//! - **比较操作**: `=`, `!=`, `>`, `<`, `>=`, `<=`
+//! - **空值检查**: `IS NULL`, `IS NOT NULL`
+//! - **列表包含**: `IN (value1, value2, ...)`
+//! - **逻辑操作**: `AND`, `OR`, `NOT`
+//! - **分组**: `(expression)`
+//!
+//! ### 字面值类型
+//! - **字符串**: `"quoted string"` 或 `unquoted_identifier`
+//! - **数字**: `123`, `-456`
+//! - **日期关键字**: `today`, `yesterday`, `tomorrow`
+//! - **用户关键字**: `current_user`
+//! - **空值**: `null`
+//!
+//! ## 解析示例
+//!
+//! ```text
+//! // 简单过滤
+//! Filter: status["Open"]
+//!
+//! // 复杂条件
+//! Filter: priority[>2 AND <=5]; status["Open" OR "Pending"]
+//!
+//! // 交叉过滤
+//! CrossFilter: <Test-Run> result["PASS"]
+//!
+//! // 混合查询
+//! Filter: assignee[current_user]; CrossFilter: <Bug-Fix> priority[>=3]
+//! ```
 
 use crate::ast::{Query, FieldFilter, CrossFilter, Condition, Identifier, CompOp, Literal};
 use crate::token::{Token, TokenKind, Span};
@@ -32,12 +116,12 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Returns the current token without advancing the position.
+    /// 返回当前 token，不推进位置
     fn peek(&self) -> Option<&Token<'a>> {
         self.tokens.get(self.position)
     }
 
-    /// Returns the current token and advances the position.
+    /// 返回当前 token 并推进位置
     fn advance(&mut self) -> Option<&Token<'a>> {
         if self.position < self.tokens.len() {
             let token = &self.tokens[self.position];
@@ -48,7 +132,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Expects a specific token kind and advances, or returns an error.
+    /// 期望特定类型的 token 并推进，否则返回错误
     fn expect(&mut self, expected: TokenKind) -> Result<&Token<'a>, ParseError> {
         if let Some(token) = self.peek() {
             if std::mem::discriminant(&token.kind) == std::mem::discriminant(&expected) {
@@ -67,7 +151,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Checks if the current token matches the given kind.
+    /// 检查当前 token 是否匹配给定类型
     fn match_token(&self, kind: &TokenKind) -> bool {
         if let Some(token) = self.peek() {
             std::mem::discriminant(&token.kind) == std::mem::discriminant(kind)
@@ -76,7 +160,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Checks if the current token is a comparison operator.
+    /// 检查当前 token 是否为比较运算符
     fn is_comparison_operator(&self) -> bool {
         if let Some(token) = self.peek() {
             matches!(token.kind, 
@@ -94,12 +178,12 @@ impl<'a> Parser<'a> {
         while let Some(token) = self.peek() {
             match &token.kind {
                 TokenKind::Filter => {
-                    self.advance(); // consume "Filter:"
+                    self.advance(); // 消费 "Filter:"
                     let filters = self.parse_field_filters_until_semicolon_or_crossfilter()?;
                     base_filters.extend(filters);
                 }
                 TokenKind::CrossFilter => {
-                    self.advance(); // consume "CrossFilter:"
+                    self.advance(); // 消费 "CrossFilter:"
                     let cross_filter = self.parse_cross_filter()?;
                     cross_filters.push(cross_filter);
                 }
@@ -118,32 +202,32 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// Parse field filters until we hit a semicolon, CrossFilter, or end of input.
+    /// 解析字段Filter，直到遇到分号、CrossFilter 或输入结束
     fn parse_field_filters_until_semicolon_or_crossfilter(&mut self) -> Result<Vec<FieldFilter>, ParseError> {
         let mut filters = Vec::new();
 
         loop {
-            // Parse one field filter
+            // 解析一个字段Filter
             let filter = self.parse_field_filter()?;
             filters.push(filter);
 
-            // Check if we need to continue
+            // 检查是否需要继续
             if let Some(token) = self.peek() {
                 match &token.kind {
                     TokenKind::Semicolon => {
-                        self.advance(); // consume semicolon
-                        // Check if next token is CrossFilter or end
+                        self.advance(); // 消费分号
+                        // 检查下一个 token 是否为 CrossFilter 或输入结束
                         if let Some(next_token) = self.peek() {
                             if matches!(next_token.kind, TokenKind::CrossFilter) {
-                                break; // End of base filters
+                                break; // 基础Filter结束
                             }
-                            // Otherwise continue parsing more field filters
+                            // 否则继续解析更多字段Filter
                         } else {
-                            break; // End of input
+                            break; // 输入结束
                         }
                     }
                     TokenKind::CrossFilter => {
-                        break; // End of base filters
+                        break; // 基础Filter结束
                     }
                     _ => {
                         return Err(ParseError::at_position(
@@ -153,7 +237,7 @@ impl<'a> Parser<'a> {
                     }
                 }
             } else {
-                break; // End of input
+                break; // 输入结束
             }
         }
 
@@ -161,7 +245,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_cross_filter(&mut self) -> Result<CrossFilter, ParseError> {
-        // Expect <Source-Target>
+        // 期望 <Source-Target>
         self.expect(TokenKind::Lt)?;
         
         let entity_token = self.expect(TokenKind::Identifier(""))?;
@@ -174,7 +258,7 @@ impl<'a> Parser<'a> {
             ));
         };
 
-        // Split the entity name by dash to get source and target
+        // 按连字符分割实体名称，获取源和目标
         let parts: Vec<&str> = entity_name.split('-').collect();
         if parts.len() != 2 {
             return Err(ParseError::at_position(
@@ -188,7 +272,7 @@ impl<'a> Parser<'a> {
 
         self.expect(TokenKind::Gt)?;
 
-        // Parse field filters for the cross filter
+        // 解析关联Filter的字段Filter
         let filters = self.parse_field_filters_until_semicolon_or_crossfilter()?;
 
         Ok(CrossFilter {
@@ -216,15 +300,23 @@ impl<'a> Parser<'a> {
         Ok(FieldFilter { field, condition })
     }
 
+    /// 解析条件表达式的入口点
+    /// 
+    /// 条件解析采用递归下降方式，按照优先级从低到高依次处理：
+    /// OR → AND → NOT → PRIMARY
     fn parse_condition(&mut self) -> Result<Condition, ParseError> {
         self.parse_or_expression()
     }
 
+    /// 解析OR表达式 (最低优先级)
+    /// 
+    /// 语法: `and_expr (OR and_expr)*`
+    /// 示例: `"Open" OR "Pending" OR "Closed"`
     fn parse_or_expression(&mut self) -> Result<Condition, ParseError> {
         let mut left = self.parse_and_expression()?;
 
         while self.match_token(&TokenKind::Or) {
-            self.advance(); // consume OR
+            self.advance(); // 消费 OR
             let right = self.parse_and_expression()?;
             left = Condition::Or(Box::new(left), Box::new(right));
         }
@@ -232,11 +324,15 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
+    /// 解析AND表达式 (中等优先级)
+    /// 
+    /// 语法: `not_expr (AND not_expr)*`
+    /// 示例: `>5 AND <=10`
     fn parse_and_expression(&mut self) -> Result<Condition, ParseError> {
         let mut left = self.parse_not_expression()?;
 
         while self.match_token(&TokenKind::And) {
-            self.advance(); // consume AND
+            self.advance(); // 消费 AND
             let right = self.parse_not_expression()?;
             left = Condition::And(Box::new(left), Box::new(right));
         }
@@ -244,29 +340,41 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
+    /// 解析NOT表达式 (较高优先级)
+    /// 
+    /// 语法: `NOT* primary_expr`
+    /// 示例: `NOT "Closed"`, `NOT NOT "Open"`
     fn parse_not_expression(&mut self) -> Result<Condition, ParseError> {
         if self.match_token(&TokenKind::Not) {
-            self.advance(); // consume NOT
-            let expr = self.parse_not_expression()?; // Allow chaining of NOT
+            self.advance(); // 消费 NOT
+            let expr = self.parse_not_expression()?; // 允许 NOT 链式调用
             Ok(Condition::Not(Box::new(expr)))
         } else {
             self.parse_primary_expression()
         }
     }
 
+    /// 解析基础表达式 (最高优先级)
+    /// 
+    /// 支持的表达式类型:
+    /// - `(condition)` - 分组表达式
+    /// - `IS [NOT] NULL` - 空值检查
+    /// - `IN (value1, value2, ...)` - 列表包含
+    /// - `op value` - 带运算符的比较 (如 `>5`, `="test"`)
+    /// - `value` - 默认相等比较 (如 `"Open"` 等价于 `="Open"`)
     fn parse_primary_expression(&mut self) -> Result<Condition, ParseError> {
         if let Some(token) = self.peek() {
             match &token.kind {
                 TokenKind::LParen => {
-                    self.advance(); // consume (
+                    self.advance(); // 消费 (
                     let expr = self.parse_condition()?;
                     self.expect(TokenKind::RParen)?;
                     Ok(Condition::Grouped(Box::new(expr)))
                 }
                 TokenKind::Is => {
-                    self.advance(); // consume IS
+                    self.advance(); // 消费 IS
                     if self.match_token(&TokenKind::Not) {
-                        self.advance(); // consume NOT
+                        self.advance(); // 消费 NOT
                         self.expect(TokenKind::Null)?;
                         Ok(Condition::IsNotNull)
                     } else {
@@ -275,11 +383,11 @@ impl<'a> Parser<'a> {
                     }
                 }
                 TokenKind::In => {
-                    self.advance(); // consume IN
+                    self.advance(); // 消费 IN
                     self.expect(TokenKind::LParen)?;
                     let mut values = Vec::new();
                     
-                    // Parse comma-separated values
+                    // 解析逗号分隔的值列表
                     loop {
                         let value = self.parse_literal()?;
                         values.push(value);
@@ -288,8 +396,8 @@ impl<'a> Parser<'a> {
                             if matches!(token.kind, TokenKind::RParen) {
                                 break;
                             }
-                            // We don't have comma in our token list, but let's assume space-separated for now
-                            // In a real implementation, we'd add comma to the lexer
+                            // 我们的 token 列表中没有逗号，暂时假设空格分隔
+                            // 在实际实现中，需要在词法分析器中添加逗号
                         } else {
                             return Err(ParseError::new("Expected closing parenthesis".to_string(), None));
                         }
@@ -299,13 +407,13 @@ impl<'a> Parser<'a> {
                     Ok(Condition::In(values))
                 }
                 _ => {
-                    // Check if this starts with a comparison operator
+                    // 检查是否以比较运算符开始
                     if self.is_comparison_operator() {
                         let op = self.parse_comparison_operator()?;
                         let value = self.parse_literal()?;
                         Ok(Condition::Comparison { op, value })
                     } else {
-                        // Default to equality comparison if no operator is specified
+                        // 如果没有指定运算符，默认为相等比较
                         let value = self.parse_literal()?;
                         Ok(Condition::Comparison { op: CompOp::Eq, value })
                     }
@@ -345,7 +453,7 @@ impl<'a> Parser<'a> {
                 TokenKind::Tomorrow => Ok(Literal::Date("tomorrow".to_string())),
                 TokenKind::CurrentUser => Ok(Literal::CurrentUser),
                 TokenKind::Identifier(s) => {
-                    // Unquoted string
+                    // 不带引号的字符串
                     Ok(Literal::String(s.to_string()))
                 }
                 _ => Err(ParseError::at_position(

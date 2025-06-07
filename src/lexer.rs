@@ -1,10 +1,10 @@
-//! The lexer for the filter language.
+//! Filter的词法分析器
 
 use crate::token::{Span, Token, TokenKind};
 
 pub struct Lexer<'a> {
     input: &'a str,
-    /// The current position in the input string (byte index).
+    /// 输入字符串中的当前位置（字节索引）
     position: usize,
 }
 
@@ -13,17 +13,17 @@ impl<'a> Lexer<'a> {
         Lexer { input, position: 0 }
     }
 
-    /// Returns the character at the current position without advancing.
+    /// 返回当前位置的字符，不推进位置
     fn peek(&self) -> Option<char> {
         self.input[self.position..].chars().next()
     }
 
-    /// Returns the character at the next position without advancing.
+    /// 返回下一个位置的字符，不推进位置
     fn peek_next(&self) -> Option<char> {
         self.input[self.position..].chars().nth(1)
     }
 
-    /// Advances the position by one character and returns it.
+    /// 推进位置一个字符并返回该字符
     fn bump(&mut self) -> Option<char> {
         let c = self.peek();
         if let Some(c) = c {
@@ -32,7 +32,7 @@ impl<'a> Lexer<'a> {
         c
     }
 
-    /// Skips whitespace characters.
+    /// 跳过空白字符
     fn skip_whitespace(&mut self) {
         while let Some(c) = self.peek() {
             if c.is_whitespace() {
@@ -43,7 +43,7 @@ impl<'a> Lexer<'a> {
         }
     }
     
-    /// Reads a number literal.
+    /// 读取数字字面量
     fn read_number(&mut self, start: usize) -> Token<'a> {
         while let Some(c) = self.peek() {
             if c.is_ascii_digit() {
@@ -53,15 +53,15 @@ impl<'a> Lexer<'a> {
             }
         }
         let value_str = &self.input[start..self.position];
-        let value = value_str.parse::<i64>().unwrap_or(0); // Should not fail
+        let value = value_str.parse::<i64>().unwrap_or(0); // 理论上不应该失败
         Token {
             kind: TokenKind::Number(value),
             span: Span::new(start, self.position),
         }
     }
     
-    /// Reads a string literal enclosed in double quotes.
-    /// Note: The opening quote has already been consumed by the caller.
+    /// 读取双引号包围的字符串字面量
+    /// 注意：开始的引号已经被调用者消费
     fn read_string(&mut self, start: usize) -> Token<'a> {
         let content_start = self.position;
         while let Some(c) = self.peek() {
@@ -71,7 +71,7 @@ impl<'a> Lexer<'a> {
             self.bump();
         }
         let content_end = self.position;
-        self.bump(); // Consume the closing quote
+        self.bump(); // 消费结束引号
         
         let content = &self.input[content_start..content_end];
         Token {
@@ -80,8 +80,8 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    /// Reads an identifier or a keyword.
-    /// Identifiers can contain letters, digits, hyphens, and underscores.
+    /// 读取标识符或关键字
+    /// 标识符可以包含字母、数字、连字符和下划线
     fn read_identifier(&mut self, start: usize) -> Token<'a> {
         while let Some(c) = self.peek() {
             if c.is_alphanumeric() || c == '-' || c == '_' {
@@ -92,14 +92,14 @@ impl<'a> Lexer<'a> {
         }
         let literal = &self.input[start..self.position];
         
-        // Check for special keywords "Filter:" and "CrossFilter:"
+        // 检查特殊关键字 "Filter:" 和 "CrossFilter:"
         if self.peek() == Some(':') {
              if literal.eq_ignore_ascii_case("Filter") {
-                self.bump(); // consume ':'
+                self.bump(); // 消费 ':'
                 return Token { kind: TokenKind::Filter, span: Span::new(start, self.position) };
              }
              if literal.eq_ignore_ascii_case("CrossFilter") {
-                self.bump(); // consume ':'
+                self.bump(); // 消费 ':'
                 return Token { kind: TokenKind::CrossFilter, span: Span::new(start, self.position) };
              }
         }
@@ -133,7 +133,7 @@ impl<'a> Iterator for Lexer<'a> {
         let start = self.position;
 
         let Some(c) = self.bump() else {
-            return None; // Reached the end of input
+            return None; // 到达输入末尾
         };
 
         let token = match c {
