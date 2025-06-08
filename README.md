@@ -1,4 +1,4 @@
-# Report Dispatcher - Filter DSL 到 SQL 编译器
+# Filter DSL 到 SQL 编译器
 
 一个将自定义Filter DSL语言编译为优化SQL查询的Rust库。(目前仅作为工作项目的摘取)
 
