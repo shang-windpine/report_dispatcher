@@ -142,6 +142,7 @@ impl<'a> Iterator for Lexer<'a> {
             ')' => Token { kind: TokenKind::RParen, span: Span::new(start, self.position) },
             '[' => Token { kind: TokenKind::LBracket, span: Span::new(start, self.position) },
             ']' => Token { kind: TokenKind::RBracket, span: Span::new(start, self.position) },
+            ',' => Token { kind: TokenKind::Comma, span: Span::new(start, self.position) },
             '<' => {
                 if self.peek() == Some('=') {
                     self.bump();
@@ -196,7 +197,7 @@ mod tests {
     
     #[test]
     fn test_all_operators_and_punctuation() {
-        let input = "!= = > < >= <= ( ) [ ] ; -";
+        let input = "!= = > < >= <= ( ) [ ] ; , -";
         let kinds: Vec<_> = Lexer::new(input).map(|t| t.kind).collect();
         assert_eq!(
             kinds,
@@ -204,7 +205,7 @@ mod tests {
                 TokenKind::NotEq, TokenKind::Eq, TokenKind::Gt, TokenKind::Lt,
                 TokenKind::Gte, TokenKind::Lte, TokenKind::LParen, TokenKind::RParen,
                 TokenKind::LBracket, TokenKind::RBracket, TokenKind::Semicolon,
-                TokenKind::Dash,
+                TokenKind::Comma, TokenKind::Dash,
             ]
         );
     }

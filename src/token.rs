@@ -37,6 +37,7 @@ pub enum TokenKind<'a> {
     LBracket,  // [
     RBracket,  // ]
     Semicolon, // ;
+    Comma,     // ,
     Dash,      // -
 
     // 运算符

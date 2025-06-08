@@ -33,24 +33,18 @@ fn create_compiler_with_config_silent() -> SqlCompiler {
 fn process_filter_string(compiler: &mut SqlCompiler, filter_string: &str) {
     println!("\n[输入 DSL]:\n{}\n", filter_string);
 
-    // 1. 词法分析器 - 对 DSL 进行分词
     println!("[步骤 1]: 对 DSL 进行分词...");
     let tokens: Vec<_> = Lexer::new(filter_string).collect();
     println!("生成了 {} 个 token", tokens.len());
     
-    // 2. 语法分析器 - 从 token 构建 AST
     println!("\n[步骤 2]: 将 token 解析为 AST...");
     let mut parser = Parser::new(&tokens);
     match parser.parse() {
         Ok(ast) => {
             println!("✓ 成功将 DSL 解析为 AST");
-            // AST 结构比较大，可以选择性打印
-            // println!("AST 结构: {:#?}", ast);
 
-            // 3. SQL 编译器 - 生成优化的 SQL
             println!("\n[步骤 3]: 将 AST 编译为 SQL...");
             
-            // 使用编译和优化方法，指定实体名为"Issue"
             match compiler.compile_optimized(ast.clone(), "Issue") {
                 Ok(result) => {
                     println!("✅ 成功编译为 SQL");
@@ -64,7 +58,6 @@ fn process_filter_string(compiler: &mut SqlCompiler, filter_string: &str) {
                         }
                     }
 
-                    // 4. 演示批量查询编译
                     println!("\n[步骤 4]: 演示批量查询编译...");
                     
                     match compiler.compile_batch_query(ast, "Issue") {
@@ -106,7 +99,6 @@ fn main() -> Result<()> {
     println!("--- Report Dispatcher: 交互式 Filter-to-SQL 编译器 ---");
     println!("输入 'exit' 或 'quit' 退出程序。");
     
-    // 显示当前使用的表映射配置
     println!("\n[配置信息]:");
     match TableMappingConfig::from_json_file("table_mapping.json") {
         Ok(config) => {
@@ -123,7 +115,6 @@ fn main() -> Result<()> {
         }
     }
     
-    // 创建可变的编译器实例，以便在循环中使用
     let mut compiler = create_compiler_with_config_silent();
     let mut rl = DefaultEditor::new()?;
 
@@ -139,7 +130,6 @@ fn main() -> Result<()> {
                     continue;
                 }
 
-                // 将输入添加到历史记录中
                 rl.add_history_entry(input)?;
                 
                 process_filter_string(&mut compiler, input);

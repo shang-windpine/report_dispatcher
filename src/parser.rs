@@ -386,23 +386,18 @@ impl<'a> Parser<'a> {
                     self.advance(); // 消费 IN
                     self.expect(TokenKind::LParen)?;
                     let mut values = Vec::new();
-                    
+
                     // 解析逗号分隔的值列表
-                    loop {
-                        let value = self.parse_literal()?;
-                        values.push(value);
-                        
-                        if let Some(token) = self.peek() {
-                            if matches!(token.kind, TokenKind::RParen) {
+                    if !self.match_token(&TokenKind::RParen) {
+                        loop {
+                            values.push(self.parse_literal()?);
+                            if self.match_token(&TokenKind::RParen) {
                                 break;
                             }
-                            // 我们的 token 列表中没有逗号，暂时假设空格分隔
-                            // 在实际实现中，需要在词法分析器中添加逗号
-                        } else {
-                            return Err(ParseError::new("Expected closing parenthesis".to_string(), None));
+                            self.expect(TokenKind::Comma)?;
                         }
                     }
-                    
+
                     self.expect(TokenKind::RParen)?;
                     Ok(Condition::In(values))
                 }
@@ -625,6 +620,54 @@ mod tests {
         } else {
             panic!("Expected comparison with current_user");
         }
+    }
+
+    #[test]
+    fn test_in_clause() {
+        let input = r#"Filter: status[IN ("Open", "Pending")]"#;
+        let result = parse_string(input).unwrap();
+
+        let filter = &result.base_filters[0];
+        assert_eq!(filter.field.0, "status");
+
+        if let Condition::In(values) = &filter.condition {
+            assert_eq!(values.len(), 2);
+            assert_eq!(values[0], Literal::String("Open".to_string()));
+            assert_eq!(values[1], Literal::String("Pending".to_string()));
+        } else {
+            panic!("Expected IN condition");
+        }
+    }
+
+    #[test]
+    fn test_in_clause_empty() {
+        let input = r#"Filter: status[IN ()]"#;
+        let result = parse_string(input).unwrap();
+        let filter = &result.base_filters[0];
+        if let Condition::In(values) = &filter.condition {
+            assert!(values.is_empty());
+        } else {
+            panic!("Expected IN condition");
+        }
+    }
+
+    #[test]
+    fn test_in_clause_single_item() {
+        let input = r#"Filter: status[IN ("Open")]"#;
+        let result = parse_string(input).unwrap();
+        let filter = &result.base_filters[0];
+        if let Condition::In(values) = &filter.condition {
+            assert_eq!(values.len(), 1);
+            assert_eq!(values[0], Literal::String("Open".to_string()));
+        } else {
+            panic!("Expected IN condition");
+        }
+    }
+
+    #[test]
+    fn test_in_clause_trailing_comma_is_error() {
+        let input = r#"Filter: status[IN ("Open",)]"#;
+        assert!(parse_string(input).is_err());
     }
 
     #[test]

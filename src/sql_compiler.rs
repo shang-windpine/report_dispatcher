@@ -5,10 +5,6 @@ use crate::config::{TableMappingConfig, ConfigError};
 use sea_query::{SelectStatement, Asterisk, Expr, SimpleExpr, PostgresQueryBuilder, JoinType, Iden, Value};
 use std::collections::HashMap;
 
-// =============================================================================
-// 核心 Trait 定义
-// =============================================================================
-
 /// 核心查询编译器 trait - 所有编译器必须实现的基本功能
 pub trait QueryCompiler {
     /// 将查询 AST 编译为 SQL 字符串
@@ -64,10 +60,6 @@ pub trait CompilerFactory {
     /// 从配置创建编译器
     fn create_with_config(config: CompilerConfig) -> Result<Self::Compiler, CompileError>;
 }
-
-// =============================================================================
-// 职责分离的具体实现结构体
-// =============================================================================
 
 /// 查询优化器的具体实现
 #[derive(Debug, Clone)]
@@ -250,8 +242,6 @@ impl DefaultBatchProcessor {
 
     /// 用较小的批次替换大型 IN 条件
     fn replace_in_condition_with_batch(&self, _query: &mut AstQuery, _field: &str, _batch: Vec<Literal>) {
-        // 这是一个简化的实现
-        // 在实际实现中，需要遍历 AST 并替换特定的 IN 条件
     }
 }
 
@@ -290,10 +280,6 @@ impl TableMappingProvider for DefaultTableMapper {
         Ok(())
     }
 }
-
-// =============================================================================
-// 核心数据结构
-// =============================================================================
 
 /// SQL 方言枚举
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -406,10 +392,6 @@ pub struct BatchQueryResult {
     pub total_estimated_rows: Option<usize>,
 }
 
-// =============================================================================
-// Sea-Query 相关结构
-// =============================================================================
-
 /// 代表 sea-query 的表标识符
 #[derive(Debug, Clone)]
 pub struct TableName(pub String);
@@ -429,10 +411,6 @@ impl Iden for ColumnName {
         write!(s, "{}", self.0).unwrap();
     }
 }
-
-// =============================================================================
-// 重构后的 SQL 编译器实现
-// =============================================================================
 
 /// 基于 sea-query 的 SQL 编译器实现 - 现在只负责核心编译功能
 pub struct SqlCompiler {
@@ -503,6 +481,16 @@ impl SqlCompiler {
         let batch_config = &self.batch_processor.config;
         self.batch_processor.compile_batch(query, entity, batch_config)
     }
+
+    /// 将 "table.column" 格式的字符串转换为 sea-query 的列引用表达式
+    fn field_to_col_expr(&self, field: &str) -> Expr {
+        let parts: Vec<&str> = field.splitn(2, '.').collect();
+        if parts.len() == 2 {
+            Expr::col((TableName(parts[0].to_string()), ColumnName(parts[1].to_string())))
+        } else {
+            Expr::col(ColumnName(field.to_string()))
+        }
+    }
 }
 
 impl Default for SqlCompiler {
@@ -510,10 +498,6 @@ impl Default for SqlCompiler {
         Self::new()
     }
 }
-
-// =============================================================================
-// SqlCompiler Trait 实现 - 现在只实现核心编译功能
-// =============================================================================
 
 impl QueryCompiler for SqlCompiler {
     fn compile(&self, query: AstQuery, entity: &str) -> Result<CompileResult, CompileError> {
@@ -571,10 +555,6 @@ impl QueryCompiler for SqlCompiler {
         SqlDialect::PostgreSQL
     }
 }
-
-// =============================================================================
-// SqlCompiler 内部实现方法
-// =============================================================================
 
 impl SqlCompiler {
     /// 编译字段Filter并进行优化
@@ -664,14 +644,14 @@ impl SqlCompiler {
                     optimizations.push(opt);
                     expr
                 } else {
-                    Expr::col(ColumnName(field.to_string())).is_in(in_values)
+                    self.field_to_col_expr(field).is_in(in_values)
                 }
             }
             Condition::IsNull => {
-                Expr::col(ColumnName(field.to_string())).is_null()
+                self.field_to_col_expr(field).is_null()
             }
             Condition::IsNotNull => {
-                Expr::col(ColumnName(field.to_string())).is_not_null()
+                self.field_to_col_expr(field).is_not_null()
             }
         };
 
@@ -687,7 +667,7 @@ impl SqlCompiler {
         // 为每个块创建单独的 IN 表达式
         let mut conditions = Vec::new();
         for chunk in chunks {
-            let in_expr = Expr::col(ColumnName(field.to_string())).is_in(chunk.to_vec());
+            let in_expr = self.field_to_col_expr(field).is_in(chunk.to_vec());
             conditions.push(in_expr);
         }
         
@@ -712,7 +692,7 @@ impl SqlCompiler {
                 .map(|v| self.literal_to_value(v))
                 .collect::<Result<Vec<_>, _>>()?;
             
-            let in_expr = Expr::col(ColumnName(field.to_string())).is_in(in_values);
+            let in_expr = self.field_to_col_expr(field).is_in(in_values);
             let optimization = Optimization::OrToIn {
                 field: field.to_string(),
                 value_count: equality_values.len(),
@@ -759,7 +739,7 @@ impl SqlCompiler {
 
     /// 编译比较操作
     fn compile_comparison(&self, field: &str, op: &CompOp, value: &Literal) -> Result<SimpleExpr, CompileError> {
-        let col = Expr::col(ColumnName(field.to_string()));
+        let col = self.field_to_col_expr(field);
         let val = self.literal_to_value(value)?;
 
         let expr = match op {
@@ -793,10 +773,6 @@ impl SqlCompiler {
     }
 }
 
-// =============================================================================
-// 编译器工厂实现
-// =============================================================================
-
 /// SqlCompiler 的工厂实现
 pub struct SqlCompilerFactory;
 
@@ -811,10 +787,6 @@ impl CompilerFactory for SqlCompilerFactory {
         Ok(SqlCompiler::from_config(config))
     }
 }
-
-// =============================================================================
-// 编译器注册表 - 支持动态选择编译器
-// =============================================================================
 
 /// 编译器注册表，用于管理不同的编译器实现
 pub struct CompilerRegistry {
@@ -873,11 +845,6 @@ mod tests {
         compiler
     }
 
-    // =============================================================================
-    // Trait 使用示例和测试
-    // =============================================================================
-
-    /// 示例：自定义编译器实现
     struct CustomCompiler {
         name: String,
         dialect: SqlDialect,
@@ -924,7 +891,6 @@ mod tests {
         }
         
         fn set_optimization_config(&mut self, _config: OptimizationConfig) {
-            // Custom implementation
         }
     }
 
@@ -954,7 +920,6 @@ mod tests {
         }
         
         fn set_table_mapping(&mut self, _mapping: HashMap<String, String>) {
-            // Custom implementation
         }
         
         fn load_mapping_from_config(&mut self, _config: &TableMappingConfig) -> Result<(), ConfigError> {
